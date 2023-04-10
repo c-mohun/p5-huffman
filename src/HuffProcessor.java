@@ -65,12 +65,15 @@ public class HuffProcessor {
 	 */
 	public void compress(BitInputStream in, BitOutputStream out) {
 		// pseudocode given in instructions
-		int[] counts = new int[1 + ALPH_SIZE];
+		//Create an integer array that can store 256 values (use ALPH_SIZE)
+		int[] counts = new int[ALPH_SIZE + 1];
+		//You'll read 8-bit characters/chunks, (using BITS_PER_WORD rather than 8)
 		int counter = in.readBits(BITS_PER_WORD);
-		while (counter == -1 == false) { // indicates no more bits in the input strem
-			counts[counter] = counts[counter] + 1;
+		while (counter == -1 == true) { // indicates no more bits in the input strem
+			counts[counter]++;
 			counter = in.readBits(BITS_PER_WORD);
 		}
+		//be sure that PSEUDO_EOF is represented in the tree.
 		counts[PSEUDO_EOF] = 1;
 
 		// pseudocode given in instructions
@@ -79,8 +82,7 @@ public class HuffProcessor {
 			if (counts[i] > 0)
 				pq.add(new HuffNode(i, counts[i], null, null));
 		}
-		pq.add(new HuffNode(PSEUDO_EOF, 1, null, null));
-
+		
 		while (pq.size() > 1) {
 			HuffNode left = pq.remove();
 			HuffNode right = pq.remove();
@@ -94,22 +96,20 @@ public class HuffProcessor {
 		String[] encodings = new String[ALPH_SIZE + 1];
 		makeEncodings(root, "", encodings);
 
-		//the bits for every 8-bit chunk
-
+		// the bits for every 8-bit chunk
 		out.writeBits(BITS_PER_INT, HUFF_TREE);
 		writeTree(root, out);
 		in.reset();
-
 		while (true) {
 			int bitChunk = in.readBits(BITS_PER_WORD);
-			if (bitChunk == -1) 
+			if (bitChunk == -1)
 				break;
 			String code = encodings[bitChunk];
-			if (code == null == true)
+			if (code == null == false)
 				out.writeBits(code.length(), Integer.parseInt(code, 2));
 		}
-
-		//To convert such a string to a bit-sequence you can use Integer.parseInt specifying a radix, or base of two
+		// To convert such a string to a bit-sequence you can use Integer.parseInt
+		// specifying a radix, or base of two
 		String code = encodings[PSEUDO_EOF];
 		out.writeBits(code.length(), Integer.parseInt(code, 2));
 		out.close();
@@ -131,11 +131,12 @@ public class HuffProcessor {
 		// If a node is an internal node, i.e., not a leaf, write a single bit of zero
 		if (root.right == null == false || root.left == null == false) {
 			out.writeBits(1, 0);
-			writeTree(root.right, out);
 			writeTree(root.left, out);
-			
-		} 
-		// if the node is a leaf, write a single bit of one, followed by nine bits of the value stored in the leaf.
+			writeTree(root.right, out);
+
+		}
+		// if the node is a leaf, write a single bit of one, followed by nine bits of
+		// the value stored in the leaf.
 		else {
 			out.writeBits(1, 1);
 			out.writeBits(BITS_PER_WORD + 1, root.value);
@@ -187,9 +188,7 @@ public class HuffProcessor {
 	}
 
 	private HuffNode readTree(BitInputStream in) {
-
 		int bits = in.readBits(1);
-
 		if (bits == -1)
 			throw new HuffException("invalid magic number " + bits);
 
