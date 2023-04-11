@@ -1,4 +1,4 @@
-import java.util.PriorityQueue;
+import java.util.*;
 
 /**
  * Although this class has a history of several years,
@@ -14,12 +14,11 @@ import java.util.PriorityQueue;
  */
 
 public class HuffProcessor {
-
 	private class HuffNode implements Comparable<HuffNode> {
-		public HuffNode left;
-		public HuffNode right;
-		public int value;
-		public int weight;
+		HuffNode left;
+		HuffNode right;
+		int value;
+		int weight;
 
 		public HuffNode(int val, int count) {
 			value = val;
@@ -35,10 +34,6 @@ public class HuffProcessor {
 
 		public int compareTo(HuffNode o) {
 			return weight - o.weight;
-		}
-
-		public String toString() {
-			return Character.toString((char) value);
 		}
 	}
 
@@ -59,63 +54,43 @@ public class HuffProcessor {
 		myDebugging = debug;
 	}
 
-	/**
-	 * Decompresses a file. Output file must be identical bit-by-bit to the
-	 * original.
-	 *
-	 * @param in
-	 *            Buffered bit stream of the file to be decompressed.
-	 * @param out
-	 *            Buffered bit stream writing to the output file.
-	 */
-	public void decompress(BitInputStream in, BitOutputStream out) {
-
-		// remove all code when implementing decompress
-		int bits = in.readBits(BITS_PER_INT);
-		if (bits != HUFF_TREE || bits == -1) {
-			throw new HuffException("invalid magic number " + bits);
-		}
-		HuffNode root = readTree(in);
-		HuffNode current = root;
+	private int[] getCounts(BitInputStream in) {
+		// Create an integer array that can store 256 values (use ALPH_SIZE). You'll
+		// read 8-bit characters/chunks, (using BITS_PER_WORD rather than 8)
+		int[] counter = new int[ALPH_SIZE];
 		while (true) {
-
-			int bit = in.readBits(1);
-
-			if (bit == -1) {
-				throw new HuffException("bad input, no PSEUDO_EOF");
+			int val = in.readBits(BITS_PER_WORD);
+			if (val == -1) {
+				break;
 			}
-			if (bit == 0) { // read a 0, go left
-				current = current.left;
-
-			} else { // read a 1, go right
-				current = current.right;
-			}
-
-			// if leaf node
-			if (current.left == null & current.right == null) {
-				if (current.value == PSEUDO_EOF) {
-					break;
-				}
-				out.writeBits(BITS_PER_WORD, current.value);
-				current = root; // start back after leaf
-			}
+			counter[val]++;
 		}
-		out.close();
+		return counter;
 	}
 
-	private HuffNode readTree(BitInputStream in) {
-		int bits = in.readBits(1);
-		if (bits == -1)
-			throw new HuffException("invalid magic number " + bits);
-
-		if (bits == 0) {
-			HuffNode left = readTree(in);
-			HuffNode right = readTree(in);
-			return new HuffNode(0, 0, left, right);
-		} else {
-			int value = in.readBits(BITS_PER_WORD + 1);
-			return new HuffNode(value, 0, null, null);
+	private HuffNode makeTree(int[] counts) {
+		// You'll use a greedy algorithm and a PriorityQueue of HuffNode objects to
+		// create the trie.
+		PriorityQueue<HuffNode> pq = new PriorityQueue<>();
+		for (int i = 0; i < counts.length; i++) {
+			if (counts[i] > 0) {
+				pq.add(new HuffNode(i, counts[i], null, null));
+			}
 		}
+
+		pq.add(new HuffNode(PSEUDO_EOF, 1, null, null));
+		// ***be sure that PSEUDO_EOF is represented in the tree. ***
+
+		while (pq.size() > 1) {
+			HuffNode left = pq.remove();
+			HuffNode right = pq.remove();
+			HuffNode t = new HuffNode(0, left.weight + right.weight, left, right);
+			pq.add(t);
+		}
+
+		HuffNode root = pq.remove();
+		return root;
+
 	}
 
 	/**
@@ -126,83 +101,114 @@ public class HuffProcessor {
 	 * @param out
 	 *            Buffered bit stream writing to the output file.
 	 */
-	public void compress(BitInputStream in, BitOutputStream out) {
-		// pseudocode given in instructions
-		// Create an integer array that can store 256 values (use ALPH_SIZE)
-		int[] counts = new int[ALPH_SIZE + 1];
-		// You'll read 8-bit characters/chunks, (using BITS_PER_WORD rather than 8)
-		int counter = in.readBits(BITS_PER_WORD);
-		while (counter == -1 == true) { // indicates no more bits in the input strem
-			counts[counter]++;
-			counter = in.readBits(BITS_PER_WORD);
-		}
-		// be sure that PSEUDO_EOF is represented in the tree.
-		counts[PSEUDO_EOF] = 1;
 
-		// pseudocode given in instructions
-		PriorityQueue<HuffNode> pq = new PriorityQueue<>();
-		for (int i = 0; i < counts.length; i++) {
-			if (counts[i] > 0)
-				pq.add(new HuffNode(i, counts[i], null, null));
+	private HuffNode readTree(BitInputStream in) {
+		// Reading the tree using a helper method is required since reading the tree,
+		// stored using a pre-order traversal, is much simpler with recursion.
+		int bit = in.readBits(1);
+		if (bit == -1) {
+			throw new HuffException("Error: can't read bits");
 		}
-
-		while (pq.size() > 1) {
-			HuffNode left = pq.remove();
-			HuffNode right = pq.remove();
-			// create new HuffNode t with weight from
-			// left.weight+right.weight and left, right subtrees
-			HuffNode t = new HuffNode(0, left.weight + right.weight, left, right);
-			pq.add(t);
+		if (bit == 0) {
+			HuffNode left = readTree(in);
+			HuffNode right = readTree(in);
+			return new HuffNode(0, 0, left, right);
+		} else {
+			int value = in.readBits(BITS_PER_WORD + 1);
+			return new HuffNode(value, 0, null, null);
 		}
-		HuffNode root = pq.remove();
-
-		String[] encodings = new String[ALPH_SIZE + 1];
-		makeEncodings(root, "", encodings);
-
-		// the bits for every 8-bit chunk
-		out.writeBits(BITS_PER_INT, HUFF_TREE);
-		writeTree(root, out);
-		in.reset();
-		while (true) {
-			int bitChunk = in.readBits(BITS_PER_WORD);
-			if (bitChunk == -1)
-				break;
-			String code = encodings[bitChunk];
-			if (code == null == false)
-				out.writeBits(code.length(), Integer.parseInt(code, 2));
-		}
-		// To convert such a string to a bit-sequence you can use Integer.parseInt
-		// specifying a radix, or base of two
-		String code = encodings[PSEUDO_EOF];
-		out.writeBits(code.length(), Integer.parseInt(code, 2));
-		out.close();
 	}
 
-	private void makeEncodings(HuffNode root, String path, String[] encodings) {
-		// if the HuffNode parameter is a leaf
+	private void makeEncoding(HuffNode root, String path, String[] encodings) {
+		// this method populates an array of Strings such that encodings[val] is the
+		// encoding of the 8-bit chunk val
 		if (root.left == null == true && root.right == null == true) {
 			encodings[root.value] = path;
 			return;
+		} else {
+			// add a single "0" for left-call and a single "1" for right-call
+			makeEncoding(root.left, path + "0", encodings);
+			makeEncoding(root.right, path + "1", encodings);
 		}
-		// adding "0" to the path when making a recursive call on the left subtree
-		makeEncodings(root.left, path + "0", encodings);
-		// adding "1" to the path when making a recursive call on the right subtree
-		makeEncodings(root.right, path + "1", encodings);
 	}
 
 	private void writeTree(HuffNode root, BitOutputStream out) {
-		// If a node is an internal node, i.e., not a leaf, write a single bit of zero
-		if (root.right == null == false || root.left == null == false) {
+		// If a node is an internal node, i.e., not a leaf, write a single bit of zero.
+		// Else, if the node is a leaf, write a single bit of one, followed by nine bits
+		// of the value stored in the leaf.
+		if (root.left == null && root.right == null) {
+			out.writeBits(1, 1);
+			out.writeBits(BITS_PER_WORD + 1, root.value);
+		} else {
 			out.writeBits(1, 0);
 			writeTree(root.left, out);
 			writeTree(root.right, out);
+		}
 
+	}
+
+	public void compress(BitInputStream in, BitOutputStream out) {
+		int[] freqs = getCounts(in);
+		HuffNode root = makeTree(freqs);
+		in.reset();
+		out.writeBits(BITS_PER_INT, HUFF_TREE);
+		writeTree(root, out);
+		String[] encodings = new String[ALPH_SIZE + 1];
+		makeEncoding(root, "", encodings);
+		while (true) {
+			int val = in.readBits(BITS_PER_WORD);
+			if (val == -1) {
+				break;
+			}
+			String encoding = encodings[val];
+			out.writeBits(encoding.length(), Integer.parseInt(encoding, 2));
 		}
-		// if the node is a leaf, write a single bit of one, followed by nine bits of
-		// the value stored in the leaf.
-		else {
-			out.writeBits(1, 1);
-			out.writeBits(BITS_PER_WORD + 1, root.value);
+
+		String encoding = encodings[PSEUDO_EOF];
+		// To convert such a string to a bit-sequence you can use Integer.parseInt
+		// specifying a radix, or base of two.
+		out.writeBits(encoding.length(), Integer.parseInt(encoding, 2));
+		out.close();
+	}
+
+	/**
+	 * Decompresses a file. Output file must be identical bit-by-bit to the
+	 * original.
+	 *
+	 * @param in
+	 *            Buffered bit stream of the file to be decompressed.
+	 * @param out
+	 *            Buffered bit stream writing to the output file.
+	 */
+	public void decompress(BitInputStream in, BitOutputStream out) {
+		int bits = in.readBits(BITS_PER_INT);
+		if (bits != HUFF_TREE) {
+			throw new HuffException("invalid number:" + bits);
 		}
+
+		HuffNode root = readTree(in);
+		HuffNode current = root;
+
+		while (true) {
+			int val = in.readBits(1);
+			if (val == -1) {
+				throw new HuffException("invalid magic number ");
+			} else {
+				if (val == 0) {
+					current = current.left;
+				} else {
+					current = current.right;
+				}
+				if (current.left == null && current.right == null) {
+					if (current.value == PSEUDO_EOF) {
+						break;
+					} else {
+						out.writeBits(BITS_PER_WORD, current.value);
+						current = root;
+					}
+				}
+			}
+		}
+		out.close();
 	}
 }
